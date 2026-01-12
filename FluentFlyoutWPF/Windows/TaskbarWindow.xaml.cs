@@ -83,6 +83,9 @@ public partial class TaskbarWindow : Window
     [DllImport("user32.dll")]
     private static extern bool ScreenToClient(IntPtr hWnd, ref POINT lpPoint);
 
+    [DllImport("user32.dll")]
+    private static extern IntPtr MonitorFromWindow(IntPtr hwnd, uint dwFlags);
+
     private const int GWL_STYLE = -16;
     private const int WS_CHILD = 0x40000000;
     private const int WS_POPUP = unchecked((int)0x80000000);
@@ -92,6 +95,7 @@ public partial class TaskbarWindow : Window
     private const uint SWP_NOACTIVATE = 0x0010;
     private const uint SWP_SHOWWINDOW = 0x0040;
     private const uint SWP_ASYNCWINDOWPOS = 0x4000;
+    private const uint MONITOR_DEFAULTTONEAREST = 2;
     // ------------------
 
     private static readonly NLog.Logger Logger = NLog.LogManager.GetCurrentClassLogger();
@@ -125,12 +129,15 @@ public partial class TaskbarWindow : Window
     private IntPtr _trayHandle;
     private AutomationElement? _widgetElement;
     private AutomationElement? _trayElement;
+    private AutomationElement? _taskListElement;
     // reference to main window for flyout functions
     private MainWindow? _mainWindow;
     private bool _isPaused;
     private int _recoveryAttempts = 0;
     private int _maxRecoveryAttempts = 5;
     private int _lastSelectedMonitor = -1;
+    private bool _isHiddenDueToMaximized = false;
+    private readonly DispatcherTimer _visibilityTimer;
     //private Task _crossFadeTask = Task.CompletedTask;
 
     public TaskbarWindow()
@@ -148,6 +155,12 @@ public partial class TaskbarWindow : Window
         _timer.Interval = TimeSpan.FromMilliseconds(1500); // slow auto-update for display changes
         _timer.Tick += (s, e) => UpdatePosition();
         _timer.Start();
+
+        // Fast timer for window state detection (hide when maximized apps detected)
+        _visibilityTimer = new DispatcherTimer();
+        _visibilityTimer.Interval = TimeSpan.FromMilliseconds(250);
+        _visibilityTimer.Tick += (s, e) => CheckWindowStateAndUpdateVisibility();
+        _visibilityTimer.Start();
 
         Show();
     }
@@ -538,7 +551,32 @@ public partial class TaskbarWindow : Window
                 break;
 
             case 1: // center of the taskbar
-                physicalLeft += (taskbarRect.Right - taskbarRect.Left - physicalWidth) / 2;
+                // Default: center of taskbar
+                int centerPosition = (taskbarRect.Right - taskbarRect.Left - physicalWidth) / 2;
+                physicalLeft += centerPosition;
+                
+                // Dynamic repositioning: check if app icons would overlap - if so, position to the right of them
+                if (SettingsManager.Current.TaskbarWidgetDynamicPosition)
+                {
+                    try
+                    {
+                        (bool found, Rect taskListRect) = GetTaskListRect(taskbarHandle);
+                        if (found && taskListRect != Rect.Empty)
+                        {
+                            // Width contains the rightmost edge coordinate (absolute screen position)
+                            int taskListRightEdge = (int)taskListRect.Width;
+                            // If our absolute position would overlap with task list, move to right of it
+                            if (taskbarRect.Left + physicalLeft < taskListRightEdge + 4)
+                            {
+                                physicalLeft = taskListRightEdge - taskbarRect.Left + 8; // Position with small gap
+                            }
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        Logger.Warn(ex, "Failed to get task list bounds for center positioning");
+                    }
+                }
                 break;
 
             case 2: // right aligned next to system tray with tiny bit of padding
@@ -631,13 +669,76 @@ public partial class TaskbarWindow : Window
         _lastSelectedMonitor = SettingsManager.Current.TaskbarWidgetSelectedMonitor;
     }
 
+    /// <summary>
+    /// Checks if a maximized or fullscreen window is active and updates widget visibility accordingly.
+    /// This runs on a fast timer (250ms) to provide responsive hiding/showing.
+    /// </summary>
+    private void CheckWindowStateAndUpdateVisibility()
+    {
+        // Skip if feature is disabled or widget is not active
+        if (!SettingsManager.Current.TaskbarWidgetHideOnMaximized ||
+            !SettingsManager.Current.TaskbarWidgetEnabled ||
+            !SettingsManager.Current.IsPremiumUnlocked)
+        {
+            // Ensure widget is visible if previously hidden by this feature
+            if (_isHiddenDueToMaximized)
+            {
+                _isHiddenDueToMaximized = false;
+                Dispatcher.Invoke(() =>
+                {
+                    if (Visibility == Visibility.Collapsed && !string.IsNullOrEmpty(SongTitle.Text))
+                        Visibility = Visibility.Visible;
+                });
+            }
+            return;
+        }
+
+        try
+        {
+            // Get the monitor handle for the taskbar this widget is on
+            IntPtr taskbarHandle = GetSelectedTaskbarHandle(out _);
+            IntPtr targetMonitor = taskbarHandle != IntPtr.Zero 
+                ? MonitorFromWindow(taskbarHandle, MONITOR_DEFAULTTONEAREST) 
+                : IntPtr.Zero;
+
+            bool shouldHide = FullscreenDetector.IsForegroundWindowMaximizedOrFullscreen(targetMonitor);
+
+            if (shouldHide && !_isHiddenDueToMaximized)
+            {
+                // Hide the widget
+                _isHiddenDueToMaximized = true;
+                Dispatcher.Invoke(() =>
+                {
+                    Visibility = Visibility.Collapsed;
+                });
+            }
+            else if (!shouldHide && _isHiddenDueToMaximized)
+            {
+                // Show the widget again
+                _isHiddenDueToMaximized = false;
+                Dispatcher.Invoke(() =>
+                {
+                    // Only show if there's content to display
+                    if (!string.IsNullOrEmpty(SongTitle.Text) || !SettingsManager.Current.TaskbarWidgetHideCompletely)
+                        Visibility = Visibility.Visible;
+                });
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.Error(ex, "Error checking window state for taskbar widget visibility");
+        }
+    }
+
     public void UpdateUi(string title, string artist, BitmapImage? icon, GlobalSystemMediaTransportControlsSessionPlaybackStatus? playbackStatus, GlobalSystemMediaTransportControlsSessionPlaybackControls? playbackControls = null)
     {
         // Check premium status - hide widget if not unlocked
         if ((!SettingsManager.Current.TaskbarWidgetEnabled || !SettingsManager.Current.IsPremiumUnlocked))
         {
-            if (_timer.IsEnabled) // pause timer to save resources
+            if (_timer.IsEnabled) // pause timers to save resources
                 _timer.Stop();
+            if (_visibilityTimer.IsEnabled)
+                _visibilityTimer.Stop();
 
             Dispatcher.Invoke(() =>
             {
@@ -648,6 +749,8 @@ public partial class TaskbarWindow : Window
 
         if (!_timer.IsEnabled)
             _timer.Start();
+        if (!_visibilityTimer.IsEnabled)
+            _visibilityTimer.Start();
 
         if (title == "-" && artist == "-")
         {
@@ -676,7 +779,9 @@ public partial class TaskbarWindow : Window
                 TopBorder.BorderBrush = Brushes.Transparent;
 
                 UpdatePosition();
-                Visibility = Visibility.Visible;
+                // Only show if not hidden due to maximized window
+                if (!_isHiddenDueToMaximized)
+                    Visibility = Visibility.Visible;
             });
             return;
         }
@@ -778,7 +883,9 @@ public partial class TaskbarWindow : Window
                 ControlsStackPanel.Visibility = Visibility.Visible;
             }
 
-            Visibility = Visibility.Visible;
+            // Only show if not hidden due to maximized window
+            if (!_isHiddenDueToMaximized)
+                Visibility = Visibility.Visible;
 
             // defer UpdatePosition to allow WPF layout to complete first
             Dispatcher.BeginInvoke(() => UpdatePosition(), DispatcherPriority.Background);
@@ -917,6 +1024,80 @@ public partial class TaskbarWindow : Window
     private (bool, Rect) GetTaskbarWidgetRect(IntPtr taskbarHandle)
     {
         return GetTaskbarXamlElementRect(taskbarHandle, ref _widgetElement, "WidgetsButton");
+    }
+
+    /// <summary>
+    /// Attempts to locate the Windows taskbar app icons container and retrieves its bounding rectangle.
+    /// Used for dynamic repositioning to avoid overlapping with app icons.
+    /// This finds all button-like elements in the taskbar and calculates their combined bounds.
+    /// </summary>
+    private (bool, Rect) GetTaskListRect(IntPtr taskbarHandle)
+    {
+        try
+        {
+            AutomationElement root = AutomationElement.FromHandle(taskbarHandle);
+            if (root == null)
+                return (false, Rect.Empty);
+
+            // Get the taskbar bounding rectangle for reference
+            RECT taskbarRect;
+            GetWindowRect(taskbarHandle, out taskbarRect);
+            int taskbarCenter = (taskbarRect.Left + taskbarRect.Right) / 2;
+            
+            // Find all button elements in the taskbar
+            var buttons = root.FindAll(TreeScope.Descendants,
+                new PropertyCondition(AutomationElement.ControlTypeProperty, ControlType.Button));
+
+            if (buttons == null || buttons.Count == 0)
+                return (false, Rect.Empty);
+
+            // Find the rightmost edge of buttons that are in the center area (app icons)
+            // Exclude buttons on the far right (system tray area)
+            double rightmostEdge = 0;
+            bool foundAny = false;
+
+            foreach (AutomationElement button in buttons)
+            {
+                try
+                {
+                    Rect buttonRect = button.Current.BoundingRectangle;
+                    if (buttonRect == Rect.Empty) continue;
+
+                    // Only consider buttons in the center-left area of the taskbar
+                    // (ignore system tray buttons on the right)
+                    double buttonCenter = (buttonRect.Left + buttonRect.Right) / 2;
+                    
+                    // Consider buttons that are roughly in the left 70% of the taskbar
+                    // This excludes system tray icons on the right
+                    if (buttonCenter < taskbarRect.Left + (taskbarRect.Right - taskbarRect.Left) * 0.7)
+                    {
+                        if (buttonRect.Right > rightmostEdge)
+                        {
+                            rightmostEdge = buttonRect.Right;
+                            foundAny = true;
+                        }
+                    }
+                }
+                catch
+                {
+                    // Skip inaccessible elements
+                    continue;
+                }
+            }
+
+            if (foundAny)
+            {
+                // Return a rect where Right is the important value
+                return (true, new Rect(0, 0, rightmostEdge, 1));
+            }
+
+            return (false, Rect.Empty);
+        }
+        catch (Exception ex)
+        {
+            Logger.Warn(ex, "Failed to get task list bounds");
+            return (false, Rect.Empty);
+        }
     }
 
     private (bool, Rect) GetSystemTrayRect(IntPtr taskbarHandle)

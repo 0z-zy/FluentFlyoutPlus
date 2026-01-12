@@ -384,6 +384,18 @@ public partial class UserSettings : ObservableObject
     public partial bool TaskbarWidgetAnimated { get; set; }
 
     /// <summary>
+    /// Gets or sets a value indicating whether the taskbar widget should hide when a maximized or fullscreen window is detected.
+    /// </summary>
+    [ObservableProperty]
+    public partial bool TaskbarWidgetHideOnMaximized { get; set; }
+
+    /// <summary>
+    /// Gets or sets a value indicating whether the taskbar widget should dynamically reposition to avoid overlapping with taskbar app icons.
+    /// </summary>
+    [ObservableProperty]
+    public partial bool TaskbarWidgetDynamicPosition { get; set; }
+
+    /// <summary>
     /// Gets whether premium features are unlocked (runtime only, not persisted)
     /// </summary>
     [XmlIgnore]
@@ -448,6 +460,8 @@ public partial class UserSettings : ObservableObject
         TaskbarWidgetHideCompletely = false;
         TaskbarWidgetControlsEnabled = false;
         TaskbarWidgetAnimated = true;
+        TaskbarWidgetHideOnMaximized = true;
+        TaskbarWidgetDynamicPosition = true;
     }
 
     /// <summary>
