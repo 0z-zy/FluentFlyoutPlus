@@ -793,8 +793,9 @@ public partial class TaskbarWindow : Window
 
     public void UpdateUi(string title, string artist, BitmapImage? icon, GlobalSystemMediaTransportControlsSessionPlaybackStatus? playbackStatus, GlobalSystemMediaTransportControlsSessionPlaybackControls? playbackControls = null, GlobalSystemMediaTransportControlsSessionTimelineProperties? timeline = null)
     {
-        // Update local pause state early
-        _isPaused = playbackStatus != GlobalSystemMediaTransportControlsSessionPlaybackStatus.Playing;
+        // Update local pause state early - treat null as Playing (default safe assumption)
+        bool isPlaying = playbackStatus == GlobalSystemMediaTransportControlsSessionPlaybackStatus.Playing;
+        _isPaused = !isPlaying;
 
         // Check premium status - hide widget if not unlocked
         if ((!SettingsManager.Current.TaskbarWidgetEnabled || !SettingsManager.Current.IsPremiumUnlocked))
@@ -974,10 +975,22 @@ public partial class TaskbarWindow : Window
                     TimeDisplay.Visibility = Visibility.Visible;
 
                     // Start timer if playing
-                    if (!_isPaused && !_timeAutoUpdateTimer.IsEnabled)
-                        _timeAutoUpdateTimer.Start();
-                    else if (_isPaused)
-                        _timeAutoUpdateTimer.Stop();
+                    if (!_isPaused)
+                    {
+                        if (!_timeAutoUpdateTimer.IsEnabled)
+                        {
+                            Logger.Debug($"Starting time auto-update timer. isPaused={_isPaused}");
+                            _timeAutoUpdateTimer.Start();
+                        }
+                    }
+                    else
+                    {
+                        if (_timeAutoUpdateTimer.IsEnabled)
+                        {
+                            Logger.Debug($"Stopping time auto-update timer. isPaused={_isPaused}");
+                            _timeAutoUpdateTimer.Stop();
+                        }
+                    }
                 }
                 else
                 {
@@ -1009,9 +1022,18 @@ public partial class TaskbarWindow : Window
     /// </summary>
     private void UpdateTimeOnly()
     {
-        if (!SettingsManager.Current.TaskbarWidgetShowTime || _lastTimeline == null || _isPaused)
+        Logger.Debug($"UpdateTimeOnly called. ShowTime={SettingsManager.Current.TaskbarWidgetShowTime}, lastTimeline={_lastTimeline != null}, isPaused={_isPaused}");
+        
+        if (!SettingsManager.Current.TaskbarWidgetShowTime || _lastTimeline == null)
         {
-            if (_isPaused || _lastTimeline == null) _timeAutoUpdateTimer.Stop();
+            _timeAutoUpdateTimer.Stop();
+            return;
+        }
+        
+        // If paused, stop the timer but keep the last displayed time
+        if (_isPaused)
+        {
+            _timeAutoUpdateTimer.Stop();
             return;
         }
 
