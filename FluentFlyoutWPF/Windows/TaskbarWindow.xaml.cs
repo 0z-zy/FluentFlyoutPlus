@@ -138,6 +138,7 @@ public partial class TaskbarWindow : Window
     private int _lastSelectedMonitor = -1;
     private bool _isHiddenDueToMaximized = false;
     private readonly DispatcherTimer _visibilityTimer;
+    private GlobalSystemMediaTransportControlsSessionTimelineProperties? _lastTimeline;
     //private Task _crossFadeTask = Task.CompletedTask;
 
     public TaskbarWindow()
@@ -936,18 +937,33 @@ public partial class TaskbarWindow : Window
             }
 
             // Update time display if enabled
-            if (SettingsManager.Current.TaskbarWidgetShowTime && timeline != null && timeline.MaxSeekTime.TotalSeconds >= 1.0)
+            if (SettingsManager.Current.TaskbarWidgetShowTime)
             {
-                var pos = timeline.Position + (DateTime.Now - timeline.LastUpdatedTime.DateTime);
-                if (pos > timeline.EndTime) pos = timeline.EndTime;
-                if (pos < TimeSpan.Zero) pos = TimeSpan.Zero;
-                
-                string format = timeline.MaxSeekTime.Hours > 0 ? @"h\:mm\:ss" : @"m\:ss";
-                TimeDisplay.Text = $"{pos.ToString(format)} / {timeline.MaxSeekTime.ToString(format)}";
-                TimeDisplay.Visibility = Visibility.Visible;
+                // Fallback to last known timeline if current is null but song is same
+                if (timeline == null && _lastTimeline != null && SongTitle.Text == title && SongArtist.Text == artist)
+                {
+                    timeline = _lastTimeline;
+                }
+
+                if (timeline != null && timeline.MaxSeekTime.TotalSeconds >= 1.0)
+                {
+                    _lastTimeline = timeline;
+                    var pos = timeline.Position + (DateTime.Now - timeline.LastUpdatedTime.DateTime);
+                    if (pos > timeline.EndTime) pos = timeline.EndTime;
+                    if (pos < TimeSpan.Zero) pos = TimeSpan.Zero;
+                    
+                    string format = timeline.MaxSeekTime.Hours > 0 ? @"h\:mm\:ss" : @"m\:ss";
+                    TimeDisplay.Text = $"{pos.ToString(format)} / {timeline.MaxSeekTime.ToString(format)}";
+                    TimeDisplay.Visibility = Visibility.Visible;
+                }
+                else
+                {
+                    TimeDisplay.Visibility = Visibility.Collapsed;
+                }
             }
             else
             {
+                _lastTimeline = null;
                 TimeDisplay.Visibility = Visibility.Collapsed;
             }
 
