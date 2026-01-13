@@ -138,6 +138,7 @@ public partial class TaskbarWindow : Window
     private int _lastSelectedMonitor = -1;
     private bool _isHiddenDueToMaximized = false;
     private readonly DispatcherTimer _visibilityTimer;
+    private readonly DispatcherTimer _timeAutoUpdateTimer;
     private GlobalSystemMediaTransportControlsSessionTimelineProperties? _lastTimeline;
     //private Task _crossFadeTask = Task.CompletedTask;
 
@@ -162,6 +163,11 @@ public partial class TaskbarWindow : Window
         _visibilityTimer.Interval = TimeSpan.FromMilliseconds(250);
         _visibilityTimer.Tick += (s, e) => CheckWindowStateAndUpdateVisibility();
         _visibilityTimer.Start();
+
+        // Timer for media time progression
+        _timeAutoUpdateTimer = new DispatcherTimer();
+        _timeAutoUpdateTimer.Interval = TimeSpan.FromSeconds(1);
+        _timeAutoUpdateTimer.Tick += (s, e) => UpdateTimeOnly();
 
         Show();
     }
@@ -948,22 +954,38 @@ public partial class TaskbarWindow : Window
                 if (timeline != null && timeline.MaxSeekTime.TotalSeconds >= 1.0)
                 {
                     _lastTimeline = timeline;
-                    var pos = timeline.Position + (DateTime.Now - timeline.LastUpdatedTime.DateTime);
+                    
+                    // Only extrapolate if NOT paused
+                    TimeSpan pos = timeline.Position;
+                    if (!_isPaused)
+                    {
+                        var delta = DateTime.Now - timeline.LastUpdatedTime.DateTime;
+                        pos += delta;
+                    }
+                    
                     if (pos > timeline.EndTime) pos = timeline.EndTime;
                     if (pos < TimeSpan.Zero) pos = TimeSpan.Zero;
                     
                     string format = timeline.MaxSeekTime.Hours > 0 ? @"h\:mm\:ss" : @"m\:ss";
                     TimeDisplay.Text = $"{pos.ToString(format)} / {timeline.MaxSeekTime.ToString(format)}";
                     TimeDisplay.Visibility = Visibility.Visible;
+
+                    // Start timer if playing
+                    if (!_isPaused && !_timeAutoUpdateTimer.IsEnabled)
+                        _timeAutoUpdateTimer.Start();
+                    else if (_isPaused)
+                        _timeAutoUpdateTimer.Stop();
                 }
                 else
                 {
+                    _timeAutoUpdateTimer.Stop();
                     TimeDisplay.Visibility = Visibility.Collapsed;
                 }
             }
             else
             {
                 _lastTimeline = null;
+                _timeAutoUpdateTimer.Stop();
                 TimeDisplay.Visibility = Visibility.Collapsed;
             }
 
@@ -982,6 +1004,23 @@ public partial class TaskbarWindow : Window
     /// <summary>
     /// Applies the current widget style (Default, Pill, Minimal)
     /// </summary>
+    private void UpdateTimeOnly()
+    {
+        if (!SettingsManager.Current.TaskbarWidgetShowTime || _lastTimeline == null || _isPaused)
+        {
+            if (_isPaused) _timeAutoUpdateTimer.Stop();
+            return;
+        }
+
+        var timeline = _lastTimeline;
+        var pos = timeline.Position + (DateTime.Now - timeline.LastUpdatedTime.DateTime);
+        if (pos > timeline.EndTime) pos = timeline.EndTime;
+        if (pos < TimeSpan.Zero) pos = TimeSpan.Zero;
+
+        string format = timeline.MaxSeekTime.Hours > 0 ? @"h\:mm\:ss" : @"m\:ss";
+        TimeDisplay.Text = $"{pos.ToString(format)} / {timeline.MaxSeekTime.ToString(format)}";
+    }
+
     private void ApplyWidgetStyle()
     {
         int style = SettingsManager.Current.TaskbarWidgetStyle;
