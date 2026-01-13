@@ -199,6 +199,8 @@
                             <RowDefinition Height="Auto"/>
                             <RowDefinition Height="Auto"/>
                             <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
                         </Grid.RowDefinitions>
                         <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
                             <Border CornerRadius="10" ClipToBounds="True" Width="164" Height="98">
@@ -435,6 +437,34 @@
                                 </StackPanel>
                             </ui:CardControl.Header>
                             <controls:ToggleSwitch IsChecked="{Binding TaskbarWidgetDynamicPosition, Mode=TwoWay}" IsEnabled="{Binding IsPremiumUnlocked}"/>
+                        </ui:CardControl>
+                        <ui:CardControl Grid.Row="14" Icon="{ui:SymbolIcon PaintBrush24}" Margin="0,0,0,3">
+                            <ui:CardControl.Header>
+                                <StackPanel Orientation="Vertical">
+                                    <StackPanel Orientation="Horizontal">
+                                        <TextBlock Text="{DynamicResource TaskbarWidgetStyleTitle}" FontSize="14" FontWeight="Regular" VerticalAlignment="Center"/>
+                                        <ui:InfoBadge Value=" New " FontWeight="Medium" FontSize="10" Margin="6,-2,0,-2" Severity="Success"/>
+                                    </StackPanel>
+                                    <TextBlock Text="{DynamicResource TaskbarWidgetStyleDescription}" FontSize="12" Opacity="0.5"/>
+                                </StackPanel>
+                            </ui:CardControl.Header>
+                            <ComboBox SelectedIndex="{Binding TaskbarWidgetStyle}" IsEnabled="{Binding IsPremiumUnlocked}">
+                                <ComboBoxItem Content="{DynamicResource TaskbarWidgetStyleDefault}"/>
+                                <ComboBoxItem Content="{DynamicResource TaskbarWidgetStylePill}"/>
+                                <ComboBoxItem Content="{DynamicResource TaskbarWidgetStyleMinimal}"/>
+                            </ComboBox>
+                        </ui:CardControl>
+                        <ui:CardControl Grid.Row="15" Icon="{ui:SymbolIcon Timer24}" Margin="0,0,0,3">
+                            <ui:CardControl.Header>
+                                <StackPanel Orientation="Vertical">
+                                    <StackPanel Orientation="Horizontal">
+                                        <TextBlock Text="{DynamicResource TaskbarWidgetShowTimeTitle}" FontSize="14" FontWeight="Regular" VerticalAlignment="Center"/>
+                                        <ui:InfoBadge Value=" New " FontWeight="Medium" FontSize="10" Margin="6,-2,0,-2" Severity="Success"/>
+                                    </StackPanel>
+                                    <TextBlock Text="{DynamicResource TaskbarWidgetShowTimeDescription}" FontSize="12" Opacity="0.5"/>
+                                </StackPanel>
+                            </ui:CardControl.Header>
+                            <controls:ToggleSwitch IsChecked="{Binding TaskbarWidgetShowTime, Mode=TwoWay}" IsEnabled="{Binding IsPremiumUnlocked}"/>
                         </ui:CardControl>
                     </Grid>
 
@@ -797,7 +827,8 @@
                         <StackPanel Orientation="Vertical" VerticalAlignment="Center">
                             <TextBlock Text="{DynamicResource EnjoyingAppText}" HorizontalAlignment="Center" FontSize="12" Opacity="0.5" VerticalAlignment="Center" Margin="4,0,0,0"/>
                         </StackPanel>
-                        <ui:Anchor Content="{DynamicResource GitHubRepoLink}" Icon="{ui:SymbolIcon Open24}" NavigateUri="https://github.com/unchihugo/FluentFlyout" Margin="12,0,0,0"/>
+                        <ui:Anchor Content="{DynamicResource GitHubRepoLink}" Icon="{ui:SymbolIcon Open24}" NavigateUri="https://github.com/0z-zy/FluentFlyoutPlus" Margin="12,0,0,0"/>
+                        <controls:Button Name="QuitButton" Content="{DynamicResource QuitApplicationButton}" Padding="12,0,12,0" Height="32" Click="QuitButton_Click" Margin="8,24,0,24" HorizontalAlignment="Left" FontWeight="SemiBold"/>
                         <controls:Button Name="SaveButton" Style="{StaticResource MicaWPF.Styles.AccentedButton}" Content="{DynamicResource CloseButton}" Padding="12,0,12,0" Height="32" Click="SaveButton_Click" Margin="8,24,24,24" HorizontalAlignment="Left" FontWeight="SemiBold"/>
                     </StackPanel>
                 </DockPanel>

@@ -419,14 +419,15 @@ public partial class MainWindow : MicaWindow
         var focusedSession = mediaManager.GetFocusedSession();
         var songInfo = focusedSession.ControlSession.TryGetMediaPropertiesAsync().GetAwaiter().GetResult();
         var playbackInfo = focusedSession.ControlSession.GetPlaybackInfo();
-        taskbarWindow?.UpdateUi(songInfo.Title, songInfo.Artist, Helper.GetThumbnail(songInfo.Thumbnail), playbackInfo.PlaybackStatus, playbackInfo.Controls);
+        var timeline = focusedSession.ControlSession.GetTimelineProperties();
+        taskbarWindow?.UpdateUi(songInfo.Title, songInfo.Artist, Helper.GetThumbnail(songInfo.Thumbnail), playbackInfo.PlaybackStatus, playbackInfo.Controls, timeline);
     }
 
     private void reportBug(object? sender, EventArgs e)
     {
         Process.Start(new ProcessStartInfo
         {
-            FileName = "https://github.com/unchihugo/FluentFlyout/issues/new/choose",
+            FileName = "https://github.com/0z-zy/FluentFlyoutPlus/issues/new/choose",
             UseShellExecute = true
         });
     }
@@ -435,7 +436,7 @@ public partial class MainWindow : MicaWindow
     {
         Process.Start(new ProcessStartInfo
         {
-            FileName = "https://github.com/unchihugo/FluentFlyout",
+            FileName = "https://github.com/0z-zy/FluentFlyoutPlus",
             UseShellExecute = true
         });
     }

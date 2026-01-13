@@ -205,11 +205,15 @@ public partial class SettingsWindow : MicaWindow
 
         if (!isChecked)
         {
+            // Show the tray icon
+            mainWindow.nIcon.Visibility = Visibility.Visible;
             mainWindow.nIcon.Register();
         }
         else
         {
+            // Hide the tray icon
             mainWindow.nIcon.Unregister();
+            mainWindow.nIcon.Visibility = Visibility.Collapsed;
         }
     }
 
@@ -242,5 +246,11 @@ public partial class SettingsWindow : MicaWindow
 
         SettingsManager.Current.FlyoutSelectedMonitor = update_list(SettingsManager.Current.FlyoutSelectedMonitor, FlyoutSelectedMonitorComboBox);
         SettingsManager.Current.TaskbarWidgetSelectedMonitor = update_list(SettingsManager.Current.TaskbarWidgetSelectedMonitor, TaskbarWidgetSelectedMonitorComboBox);
+    }
+
+    private void QuitButton_Click(object sender, RoutedEventArgs e)
+    {
+        SettingsManager.SaveSettings();
+        Application.Current.Shutdown();
     }
 }

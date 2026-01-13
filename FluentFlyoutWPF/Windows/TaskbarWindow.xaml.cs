@@ -229,17 +229,18 @@ public partial class TaskbarWindow : Window
     {
         if (!SettingsManager.Current.TaskbarWidgetClickable || String.IsNullOrEmpty(SongTitle.Text + SongArtist.Text)) return;
 
+        bool isMinimal = SettingsManager.Current.TaskbarWidgetStyle == 2;
         SolidColorBrush targetBackgroundBrush;
         // hover effects with animations, hard-coded colors because I can't find the resource brushes
         if (ApplicationThemeManager.GetSystemTheme() == SystemTheme.Dark)
         { // dark mode
-            targetBackgroundBrush = new SolidColorBrush(Color.FromArgb(197, 255, 255, 255)) { Opacity = 0.075 };
-            TopBorder.BorderBrush = new SolidColorBrush(Color.FromArgb(93, 255, 255, 255)) { Opacity = 0.25 };
+            targetBackgroundBrush = new SolidColorBrush(Color.FromArgb(197, 255, 255, 255)) { Opacity = isMinimal ? 0.05 : 0.075 };
+            TopBorder.BorderBrush = isMinimal ? Brushes.Transparent : new SolidColorBrush(Color.FromArgb(93, 255, 255, 255)) { Opacity = 0.25 };
         }
         else
         { // light mode
-            targetBackgroundBrush = new SolidColorBrush(Color.FromArgb(255, 255, 255, 255)) { Opacity = 0.6 };
-            TopBorder.BorderBrush = new SolidColorBrush(Color.FromArgb(93, 255, 255, 255)) { Opacity = 1 };
+            targetBackgroundBrush = new SolidColorBrush(Color.FromArgb(255, 255, 255, 255)) { Opacity = isMinimal ? 0.3 : 0.6 };
+            TopBorder.BorderBrush = isMinimal ? Brushes.Transparent : new SolidColorBrush(Color.FromArgb(93, 255, 255, 255)) { Opacity = 1 };
         }
 
         // Animate background
@@ -272,17 +273,31 @@ public partial class TaskbarWindow : Window
     {
         if (!SettingsManager.Current.TaskbarWidgetClickable || String.IsNullOrEmpty(SongTitle.Text + SongArtist.Text)) return;
 
-        // Animate back to transparent
+        // Determine the resting background based on widget style
+        bool isDark = ApplicationThemeManager.GetSystemTheme() == SystemTheme.Dark;
+        Color restingBgColor = isDark ? Color.FromArgb(100, 32, 32, 32) : Color.FromArgb(120, 240, 240, 240);
+
+        Color targetColor = Colors.Transparent;
+        double targetOpacity = 0;
+        
+        int style = SettingsManager.Current.TaskbarWidgetStyle;
+        if (style == 1 || style == 0) // Pill or Default style
+        {
+            targetColor = restingBgColor;
+            targetOpacity = 1;
+        }
+
+        // Animate back to style's default background
         var backgroundAnimation = new ColorAnimation
         {
-            To = Colors.Transparent,
+            To = targetColor,
             Duration = TimeSpan.FromMilliseconds(200),
             EasingFunction = new CubicEase { EasingMode = EasingMode.EaseInOut }
         };
 
         var backgroundOpacityAnimation = new DoubleAnimation
         {
-            To = 0,
+            To = targetOpacity,
             Duration = TimeSpan.FromMilliseconds(200),
             EasingFunction = new CubicEase { EasingMode = EasingMode.EaseInOut }
         };
@@ -293,11 +308,31 @@ public partial class TaskbarWindow : Window
         TopBorder.BorderBrush = System.Windows.Media.Brushes.Transparent;
     }
 
-    private void Grid_MouseLeftButtonUp(object sender, MouseButtonEventArgs e)
+    private async void Grid_MouseLeftButtonUp(object sender, MouseButtonEventArgs e)
     {
         if (!SettingsManager.Current.TaskbarWidgetClickable || _mainWindow == null) return;
 
-        // flyout main flyout when clicked
+        // For Minimal style, toggle play/pause instead of opening flyout
+        if (SettingsManager.Current.TaskbarWidgetStyle == 2)
+        {
+            var mediaManager = _mainWindow.mediaManager;
+            if (mediaManager == null) return;
+
+            var focusedSession = mediaManager.GetFocusedSession();
+            if (focusedSession == null) return;
+
+            if (_isPaused)
+            {
+                await focusedSession.ControlSession.TryPlayAsync();
+            }
+            else
+            {
+                await focusedSession.ControlSession.TryPauseAsync();
+            }
+            return;
+        }
+
+        // For other styles, show main flyout when clicked
         _mainWindow.ShowMediaFlyout();
     }
 
@@ -406,12 +441,15 @@ public partial class TaskbarWindow : Window
 
             CalculateAndSetPosition(taskbarHandle, myHandle, isMainTaskbarSelected);
 
-            // for hover animation
+            // for hover animation - initialize with transparent, then ApplyWidgetStyle will set correct background
             if (MainBorder.Background is not SolidColorBrush)
             {
                 MainBorder.Background = new SolidColorBrush(Colors.Transparent);
                 MainBorder.Background.Opacity = 0;
             }
+            
+            // Apply widget style to set correct background and corner radius from the start
+            ApplyWidgetStyle();
         }
         catch (Exception ex)
         {
@@ -500,18 +538,34 @@ public partial class TaskbarWindow : Window
             _cachedArtistText = currentArtist;
         }
 
-        double logicalWidth = Math.Max(_cachedTitleWidth, _cachedArtistWidth) + 55; // add margin for cover image
-        // maximum width limit, same as Windows native widget
-        logicalWidth = Math.Min(logicalWidth, _nativeWidgetsPadding / _scale);
-
-        SongTitle.Width = Math.Max(logicalWidth - 58, 0);
-        SongArtist.Width = Math.Max(logicalWidth - 58, 0);
-
-        // add space for playback controls if enabled and visible
-        if (SettingsManager.Current.TaskbarWidgetControlsEnabled && ControlsStackPanel.Visibility == Visibility.Visible)
+        double logicalWidth;
+        int widgetStyle = SettingsManager.Current.TaskbarWidgetStyle;
+        
+        if (widgetStyle == 2) // Minimal style - icon only, fixed width
         {
-            logicalWidth += (int)(102);
+            logicalWidth = 44; // just enough for the album art with rounded corners
         }
+        else
+        {
+            // Set a minimum width for Pill/Default so they don't look like Minimal when text is empty
+            double contentWidth = Math.Max(_cachedTitleWidth, _cachedArtistWidth);
+            logicalWidth = Math.Max(contentWidth, 60) + 55; // 60 is min text width
+            
+            // maximum width limit, same as Windows native widget
+            logicalWidth = Math.Min(logicalWidth, _nativeWidgetsPadding / _scale);
+        }
+
+        // Calculate space needed for Time and Controls
+        double timeWidth = (widgetStyle != 2 && SettingsManager.Current.TaskbarWidgetShowTime && TimeDisplay.Visibility == Visibility.Visible) ? 65 : 0;
+        double controlsWidth = (widgetStyle != 2 && SettingsManager.Current.TaskbarWidgetControlsEnabled && ControlsStackPanel.Visibility == Visibility.Visible) ? 102 : 0;
+
+        // Final window width includes these
+        logicalWidth += timeWidth + controlsWidth;
+
+        // Text width must be constrained to what's left
+        double availableTextSpace = Math.Max(logicalWidth - 58 - timeWidth - controlsWidth, 0);
+        SongTitle.Width = availableTextSpace;
+        SongArtist.Width = availableTextSpace;
 
         int physicalWidth = (int)(logicalWidth * dpiScale * _scale);
         int physicalHeight = (int)(40 * dpiScale); // default height
@@ -730,7 +784,7 @@ public partial class TaskbarWindow : Window
         }
     }
 
-    public void UpdateUi(string title, string artist, BitmapImage? icon, GlobalSystemMediaTransportControlsSessionPlaybackStatus? playbackStatus, GlobalSystemMediaTransportControlsSessionPlaybackControls? playbackControls = null)
+    public void UpdateUi(string title, string artist, BitmapImage? icon, GlobalSystemMediaTransportControlsSessionPlaybackStatus? playbackStatus, GlobalSystemMediaTransportControlsSessionPlaybackControls? playbackControls = null, GlobalSystemMediaTransportControlsSessionTimelineProperties? timeline = null)
     {
         // Check premium status - hide widget if not unlocked
         if ((!SettingsManager.Current.TaskbarWidgetEnabled || !SettingsManager.Current.IsPremiumUnlocked))
@@ -766,17 +820,15 @@ public partial class TaskbarWindow : Window
                 ControlsStackPanel.Visibility = Visibility.Collapsed;
                 SongTitle.Text = string.Empty;
                 SongArtist.Text = string.Empty;
-                SongInfoStackPanel.Visibility = Visibility.Collapsed;
                 SongInfoStackPanel.ToolTip = string.Empty;
                 SongImagePlaceholder.Symbol = SymbolRegular.MusicNote220;
                 SongImagePlaceholder.Visibility = Visibility.Visible;
                 SongImage.ImageSource = null;
                 BackgroundImage.Source = null;
-                SongImageBorder.Margin = new Thickness(0, 0, 0, -3); // align music note better when no cover
+                TimeDisplay.Visibility = Visibility.Collapsed;
 
-                MainBorder.Background = new SolidColorBrush(Colors.Transparent);
-                MainBorder.Background.Opacity = 0;
-                TopBorder.BorderBrush = Brushes.Transparent;
+                // Apply widget style (sets background, corners, AND visibility based on style setting)
+                ApplyWidgetStyle();
 
                 UpdatePosition();
                 // Only show if not hidden due to maximized window
@@ -883,13 +935,120 @@ public partial class TaskbarWindow : Window
                 ControlsStackPanel.Visibility = Visibility.Visible;
             }
 
+            // Update time display if enabled
+            if (SettingsManager.Current.TaskbarWidgetShowTime && timeline != null && timeline.MaxSeekTime.TotalSeconds >= 1.0)
+            {
+                var pos = timeline.Position + (DateTime.Now - timeline.LastUpdatedTime.DateTime);
+                if (pos > timeline.EndTime) pos = timeline.EndTime;
+                if (pos < TimeSpan.Zero) pos = TimeSpan.Zero;
+                
+                string format = timeline.MaxSeekTime.Hours > 0 ? @"h\:mm\:ss" : @"m\:ss";
+                TimeDisplay.Text = $"{pos.ToString(format)} / {timeline.MaxSeekTime.ToString(format)}";
+                TimeDisplay.Visibility = Visibility.Visible;
+            }
+            else
+            {
+                TimeDisplay.Visibility = Visibility.Collapsed;
+            }
+
             // Only show if not hidden due to maximized window
             if (!_isHiddenDueToMaximized)
                 Visibility = Visibility.Visible;
 
+            // Apply widget style
+            ApplyWidgetStyle();
+
             // defer UpdatePosition to allow WPF layout to complete first
             Dispatcher.BeginInvoke(() => UpdatePosition(), DispatcherPriority.Background);
         });
+    }
+
+    /// <summary>
+    /// Applies the current widget style (Default, Pill, Minimal)
+    /// </summary>
+    private void ApplyWidgetStyle()
+    {
+        int style = SettingsManager.Current.TaskbarWidgetStyle;
+        
+        // Use theme-aware colors for better visibility
+        bool isDark = ApplicationThemeManager.GetSystemTheme() == SystemTheme.Dark;
+        // Background is semi-transparent dark/light
+        Color bgColor = isDark ? Color.FromArgb(100, 32, 32, 32) : Color.FromArgb(120, 240, 240, 240);
+        // Border is extremely subtle (alpha 10 instead of 20)
+        Color borderColor = isDark ? Color.FromArgb(10, 255, 255, 255) : Color.FromArgb(10, 0, 0, 0);
+
+        switch (style)
+        {
+            case 1: // Pill style - true Stadium shape (radius = height/2)
+                MainBorder.CornerRadius = new CornerRadius(20); // Perfect semi-circles for 40px height
+                TopBorder.CornerRadius = new CornerRadius(20);
+                MainBorder.Background = new SolidColorBrush(bgColor);
+                MainBorder.BorderBrush = Brushes.Transparent;
+                MainBorder.BorderThickness = new Thickness(0); // Borderless as requested
+                SongInfoStackPanel.Visibility = Visibility.Visible;
+                SongImageBorder.Width = 30;
+                SongImageBorder.Height = 30;
+                SongImageBorder.CornerRadius = new CornerRadius(10); // Matches look better with outer radius
+                SongImageBorder.Margin = new Thickness(4, 0, 0, 0); // More padding for stadium look
+                MainStackPanel.Margin = new Thickness(4, 0, -100, 0);
+                BackgroundImage.Visibility = Visibility.Visible;
+                break;
+                
+            case 2: // Minimal style - icon only
+                MainBorder.CornerRadius = new CornerRadius(8);
+                TopBorder.CornerRadius = new CornerRadius(8);
+                MainBorder.Background = new SolidColorBrush(Colors.Transparent);
+                MainBorder.BorderBrush = Brushes.Transparent;
+                MainBorder.BorderThickness = new Thickness(0);
+                SongInfoStackPanel.Visibility = Visibility.Collapsed;
+                ControlsStackPanel.Visibility = Visibility.Collapsed;
+                TimeDisplay.Visibility = Visibility.Collapsed; // Hide time for minimal
+                SongImageBorder.Width = 32;
+                SongImageBorder.Height = 32;
+                SongImageBorder.CornerRadius = new CornerRadius(6);
+                SongImageBorder.Margin = new Thickness(0);
+                MainStackPanel.Margin = new Thickness(6, 0, -100, 0); // Center album art (44px width, 32px icon)
+                BackgroundImage.Visibility = Visibility.Collapsed; // Hide background for minimal
+                break;
+                
+            default: // Default style
+                MainBorder.CornerRadius = new CornerRadius(8);
+                TopBorder.CornerRadius = new CornerRadius(8);
+                MainBorder.Background = new SolidColorBrush(bgColor);
+                MainBorder.BorderBrush = Brushes.Transparent;
+                MainBorder.BorderThickness = new Thickness(0); // Borderless as requested
+                SongInfoStackPanel.Visibility = Visibility.Visible;
+                SongImageBorder.Width = 34;
+                SongImageBorder.Height = 34;
+                SongImageBorder.CornerRadius = new CornerRadius(6);
+                SongImageBorder.Margin = new Thickness(0, 0, 0, -2);
+                MainStackPanel.Margin = new Thickness(4, 0, -100, 0);
+                BackgroundImage.Visibility = Visibility.Visible;
+                break;
+        }
+
+        UpdateClip();
+    }
+
+    private void MainBorder_SizeChanged(object sender, SizeChangedEventArgs e)
+    {
+        UpdateClip();
+    }
+
+    /// <summary>
+    /// Updates the clipping area of the MainBorder to match its CornerRadius.
+    /// This fixes the issue where WPF's ClipToBounds doesn't follow rounded corners.
+    /// </summary>
+    private void UpdateClip()
+    {
+        if (MainBorder == null || MainBorder.ActualWidth <= 0 || MainBorder.ActualHeight <= 0) return;
+
+        MainBorder.Clip = new RectangleGeometry
+        {
+            Rect = new Rect(0, 0, MainBorder.ActualWidth, MainBorder.ActualHeight),
+            RadiusX = MainBorder.CornerRadius.TopLeft,
+            RadiusY = MainBorder.CornerRadius.TopLeft
+        };
     }
 
     private async void AnimateEntrance()

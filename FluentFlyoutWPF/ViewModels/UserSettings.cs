@@ -396,6 +396,19 @@ public partial class UserSettings : ObservableObject
     public partial bool TaskbarWidgetDynamicPosition { get; set; }
 
     /// <summary>
+    /// Gets or sets the visual style of the taskbar widget.
+    /// 0 = Default, 1 = Pill, 2 = Minimal (icon only)
+    /// </summary>
+    [ObservableProperty]
+    public partial int TaskbarWidgetStyle { get; set; }
+
+    /// <summary>
+    /// Gets or sets whether to show the current time/duration on the taskbar widget.
+    /// </summary>
+    [ObservableProperty]
+    public partial bool TaskbarWidgetShowTime { get; set; }
+
+    /// <summary>
     /// Gets whether premium features are unlocked (runtime only, not persisted)
     /// </summary>
     [XmlIgnore]
@@ -462,6 +475,8 @@ public partial class UserSettings : ObservableObject
         TaskbarWidgetAnimated = true;
         TaskbarWidgetHideOnMaximized = true;
         TaskbarWidgetDynamicPosition = true;
+        TaskbarWidgetStyle = 0; // Default style
+        TaskbarWidgetShowTime = false; // Time display disabled by default
     }
 
     /// <summary>
@@ -547,6 +562,18 @@ public partial class UserSettings : ObservableObject
     }
 
     partial void OnTaskbarWidgetControlsEnabledChanged(bool oldValue, bool newValue)
+    {
+        if (oldValue == newValue || _initializing) return;
+        UpdateTaskbar();
+    }
+
+    partial void OnTaskbarWidgetStyleChanged(int oldValue, int newValue)
+    {
+        if (oldValue == newValue || _initializing) return;
+        UpdateTaskbar();
+    }
+
+    partial void OnTaskbarWidgetShowTimeChanged(bool oldValue, bool newValue)
     {
         if (oldValue == newValue || _initializing) return;
         UpdateTaskbar();

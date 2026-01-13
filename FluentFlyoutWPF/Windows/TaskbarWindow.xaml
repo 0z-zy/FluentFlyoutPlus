@@ -17,7 +17,7 @@
         Loaded="Window_Loaded" Visibility="Collapsed"
         xmlns:viewModels="clr-namespace:FluentFlyoutWPF.ViewModels"
 		d:DataContext="{d:DesignInstance viewModels:UserSettings}">
-    <Border Name="MainBorder" CornerRadius="6" MouseEnter="Grid_MouseEnter" MouseLeave="Grid_MouseLeave" MouseLeftButtonUp="Grid_MouseLeftButtonUp">
+    <Border Name="MainBorder" CornerRadius="6" ClipToBounds="True" MouseEnter="Grid_MouseEnter" MouseLeave="Grid_MouseLeave" MouseLeftButtonUp="Grid_MouseLeftButtonUp" SizeChanged="MainBorder_SizeChanged">
         <Grid>
 			<Image x:Name="BackgroundImage" Stretch="UniformToFill" HorizontalAlignment="Center" VerticalAlignment="Center" RenderTransformOrigin="0.5,0.5" Opacity="0.4">
 				<Image.Effect>
@@ -51,6 +51,7 @@
                             <TextBlock Name="SongTitle" Text="" FontWeight="Normal" TextTrimming="CharacterEllipsis" Foreground="{ui:ThemeResource TextFillColorPrimaryBrush}" />
                             <TextBlock Name="SongArtist" Text="" FontWeight="Normal" Opacity="0.5" Margin="0,-1.5,0,0" TextTrimming="CharacterEllipsis" Foreground="{ui:ThemeResource TextFillColorPrimaryBrush}" />
                         </StackPanel>
+                        <TextBlock Name="TimeDisplay" Text="" FontWeight="Normal" Opacity="0.6" FontSize="11" Margin="8,0,0,0" VerticalAlignment="Center" Foreground="{ui:ThemeResource TextFillColorPrimaryBrush}" Visibility="Collapsed" />
                         <StackPanel Name="ControlsStackPanel" Orientation="Horizontal" VerticalAlignment="Center" Width="Auto" Margin="8,0,0,0">
                             <StackPanel.Style>
                                 <Style TargetType="StackPanel">

@@ -66,6 +66,14 @@ hides repeat, shuffle and player info</System:String>
     <System:String x:Key="TaskbarWidgetHideOnMaximizedDescription">Automatically hide the widget when a maximized or fullscreen window is detected</System:String>
     <System:String x:Key="TaskbarWidgetDynamicPositionTitle">Dynamic Positioning</System:String>
     <System:String x:Key="TaskbarWidgetDynamicPositionDescription">Automatically reposition widget to avoid overlapping with taskbar app icons</System:String>
+    <System:String x:Key="TaskbarWidgetStyleTitle">Widget Style</System:String>
+    <System:String x:Key="TaskbarWidgetStyleDescription">Choose the visual style of the widget</System:String>
+    <System:String x:Key="TaskbarWidgetStyleDefault">Default</System:String>
+    <System:String x:Key="TaskbarWidgetStylePill">Pill</System:String>
+    <System:String x:Key="TaskbarWidgetStyleMinimal">Minimal</System:String>
+    <System:String x:Key="QuitApplicationButton">Quit</System:String>
+    <System:String x:Key="TaskbarWidgetShowTimeTitle">Show Media Time</System:String>
+    <System:String x:Key="TaskbarWidgetShowTimeDescription">Display current position and duration on the widget</System:String>
     <System:String x:Key="PremiumFeatureTitle">Premium Feature</System:String>
     <System:String x:Key="PremiumFeatureDescription" xml:space="preserve">Your one-time contribution helps me keep FluentFlyout alive and updated. It instantly unlocks all premium customization features, forever.
         

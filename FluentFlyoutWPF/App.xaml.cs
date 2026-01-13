@@ -26,4 +26,11 @@ public partial class App : Application
         
         base.OnStartup(e);
     }
+
+    protected override void OnExit(ExitEventArgs e)
+    {
+        // Ensure settings are saved when application exits via any path
+        FluentFlyout.Classes.Settings.SettingsManager.SaveSettings();
+        base.OnExit(e);
+    }
 }
