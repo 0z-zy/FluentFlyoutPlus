@@ -793,6 +793,9 @@ public partial class TaskbarWindow : Window
 
     public void UpdateUi(string title, string artist, BitmapImage? icon, GlobalSystemMediaTransportControlsSessionPlaybackStatus? playbackStatus, GlobalSystemMediaTransportControlsSessionPlaybackControls? playbackControls = null, GlobalSystemMediaTransportControlsSessionTimelineProperties? timeline = null)
     {
+        // Update local pause state early
+        _isPaused = playbackStatus != GlobalSystemMediaTransportControlsSessionPlaybackStatus.Playing;
+
         // Check premium status - hide widget if not unlocked
         if ((!SettingsManager.Current.TaskbarWidgetEnabled || !SettingsManager.Current.IsPremiumUnlocked))
         {
@@ -1008,7 +1011,7 @@ public partial class TaskbarWindow : Window
     {
         if (!SettingsManager.Current.TaskbarWidgetShowTime || _lastTimeline == null || _isPaused)
         {
-            if (_isPaused) _timeAutoUpdateTimer.Stop();
+            if (_isPaused || _lastTimeline == null) _timeAutoUpdateTimer.Stop();
             return;
         }
 
@@ -1019,6 +1022,9 @@ public partial class TaskbarWindow : Window
 
         string format = timeline.MaxSeekTime.Hours > 0 ? @"h\:mm\:ss" : @"m\:ss";
         TimeDisplay.Text = $"{pos.ToString(format)} / {timeline.MaxSeekTime.ToString(format)}";
+        
+        // When time updates, we MUST update position because width might change (e.g. 9:59 -> 10:00)
+        Dispatcher.BeginInvoke(() => UpdatePosition(), DispatcherPriority.Background);
     }
 
     private void ApplyWidgetStyle()
@@ -1045,7 +1051,7 @@ public partial class TaskbarWindow : Window
                 SongImageBorder.Height = 30;
                 SongImageBorder.CornerRadius = new CornerRadius(10); // Matches look better with outer radius
                 SongImageBorder.Margin = new Thickness(4, 0, 0, 0); // More padding for stadium look
-                MainStackPanel.Margin = new Thickness(4, 0, -100, 0);
+                MainStackPanel.Margin = new Thickness(12, 0, -100, 0); // Increased padding for better balance
                 BackgroundImage.Visibility = Visibility.Visible;
                 break;
                 
