@@ -101,7 +101,8 @@ public partial class SettingsWindow : MicaWindow
                 // Check if the path is valid before setting
                 if (File.Exists(executablePath))
                 {
-                    key.SetValue(appName, executablePath);
+                    // Add --minimized argument so app knows it was launched at startup
+                    key.SetValue(appName, $"\"{executablePath}\" --minimized");
                 }
                 else
                 {

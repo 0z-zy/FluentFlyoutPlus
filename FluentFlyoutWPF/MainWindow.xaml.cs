@@ -138,11 +138,17 @@ public partial class MainWindow : MicaWindow
             Logger.Error(ex, "Failed to restore settings");
         }
 
-        if (SettingsManager.Current.Startup == true) // add to startup programs if enabled, needs improvement
+        if (SettingsManager.Current.Startup == true) // add to startup programs if enabled
         {
-            RegistryKey key = Registry.CurrentUser.OpenSubKey("SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run", true);
-            string executablePath = Environment.ProcessPath;
-            key?.SetValue("FluentFlyout", executablePath);
+            using RegistryKey key = Registry.CurrentUser.OpenSubKey(@"SOFTWARE\Microsoft\Windows\CurrentVersion\Run", true);
+            if (key != null)
+            {
+                // Delete old entry first to clean up any duplicates
+                key.DeleteValue("FluentFlyout", false);
+                
+                string executablePath = Environment.ProcessPath;
+                key.SetValue("FluentFlyout", $"\"{executablePath}\" --minimized");
+            }
         }
 
         // display tray icon if enabled
@@ -181,9 +187,12 @@ public partial class MainWindow : MicaWindow
         Dispatcher.Invoke(() =>
         {
             LocalizationManager.ApplyLocalization();
-            // show settings to new users
+            // show settings to new users, but not if started minimized (via Windows startup)
+            string[] args = Environment.GetCommandLineArgs();
+            bool isMinimizedStartup = args.Any(arg => arg.Equals("--minimized", StringComparison.OrdinalIgnoreCase));
+            
             string previousVersion = SettingsManager.Current.LastKnownVersion;
-            if (previousVersion == string.Empty)
+            if (previousVersion == string.Empty && !isMinimizedStartup)
                 SettingsWindow.ShowInstance();
 
             try // update last known version. gets the version of the app, works only in release mode

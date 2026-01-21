@@ -51,8 +51,7 @@
                             <TextBlock Name="SongTitle" Text="" FontWeight="Normal" TextTrimming="CharacterEllipsis" Foreground="{ui:ThemeResource TextFillColorPrimaryBrush}" />
                             <TextBlock Name="SongArtist" Text="" FontWeight="Normal" Opacity="0.5" Margin="0,-1.5,0,0" TextTrimming="CharacterEllipsis" Foreground="{ui:ThemeResource TextFillColorPrimaryBrush}" />
                         </StackPanel>
-                        <TextBlock Name="TimeDisplay" Text="" FontWeight="Normal" Opacity="0.6" FontSize="11" Margin="8,0,0,0" VerticalAlignment="Center" Foreground="{ui:ThemeResource TextFillColorPrimaryBrush}" Visibility="Collapsed" />
-                        <StackPanel Name="ControlsStackPanel" Orientation="Horizontal" VerticalAlignment="Center" Width="Auto" Margin="8,0,0,0">
+                        <StackPanel Name="ControlsStackPanel" Orientation="Vertical" VerticalAlignment="Center" Width="Auto" Margin="8,0,0,0">
                             <StackPanel.Style>
                                 <Style TargetType="StackPanel">
                                     <Setter Property="Visibility" Value="Collapsed" />
@@ -63,9 +62,12 @@
                                     </Style.Triggers>
                                 </Style>
                             </StackPanel.Style>
-                            <ui:Button Name="PreviousButton" Appearance="Transparent" Icon="{ui:SymbolIcon Previous20, Filled=True}" Height="32" Width="32" Padding="0" BorderThickness="0" Margin="0,0,0,-1" Click="Previous_Click"/>
-                            <ui:Button Name="PlayPauseButton" Appearance="Transparent" Icon="{ui:SymbolIcon Pause16, Filled=True}" Height="32" Width="32" Padding="0" BorderThickness="0" Margin="0,0,0,-1" Click="PlayPause_Click"/>
-                            <ui:Button Name="NextButton" Appearance="Transparent" Icon="{ui:SymbolIcon Next20, Filled=True}" Height="32" Width="32" Padding="0" BorderThickness="0" Margin="0,0,0,-1" Click="Next_Click"/>
+                            <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+                                <ui:Button Name="PreviousButton" Appearance="Transparent" Icon="{ui:SymbolIcon Previous20, Filled=True}" Height="28" Width="28" Padding="0" BorderThickness="0" Click="Previous_Click"/>
+                                <ui:Button Name="PlayPauseButton" Appearance="Transparent" Icon="{ui:SymbolIcon Pause16, Filled=True}" Height="28" Width="28" Padding="0" BorderThickness="0" Click="PlayPause_Click"/>
+                                <ui:Button Name="NextButton" Appearance="Transparent" Icon="{ui:SymbolIcon Next20, Filled=True}" Height="28" Width="28" Padding="0" BorderThickness="0" Click="Next_Click"/>
+                            </StackPanel>
+                            <TextBlock Name="TimeDisplay" Text="" FontWeight="Normal" Opacity="0.6" FontSize="10" HorizontalAlignment="Center" Margin="0,-2,0,0" Foreground="{ui:ThemeResource TextFillColorPrimaryBrush}" Visibility="Collapsed" />
                         </StackPanel>
 					</StackPanel>
 				</Grid>
