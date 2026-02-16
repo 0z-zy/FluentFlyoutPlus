@@ -1017,6 +1017,17 @@ public partial class TaskbarWindow : Window
         });
     }
 
+    public void UpdateTimeline(GlobalSystemMediaTransportControlsSessionTimelineProperties timeline)
+    {
+        if (!SettingsManager.Current.TaskbarWidgetShowTime) return;
+
+        Dispatcher.Invoke(() =>
+        {
+            _lastTimeline = timeline;
+            UpdateTimeOnly();
+        });
+    }
+
     /// <summary>
     /// Applies the current widget style (Default, Pill, Minimal)
     /// </summary>

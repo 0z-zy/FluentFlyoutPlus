@@ -174,6 +174,7 @@ public partial class MainWindow : MicaWindow
         mediaManager.OnAnyPlaybackStateChanged += CurrentSession_OnPlaybackStateChanged;
         mediaManager.OnAnyTimelinePropertyChanged += MediaManager_OnAnyTimelinePropertyChanged;
         mediaManager.OnAnySessionClosed += MediaManager_OnAnySessionClosed;
+        mediaManager.OnFocusedSessionChanged += MediaManager_OnFocusedSessionChanged;
 
         WM_TASKBARCREATED = RegisterWindowMessage("TaskbarCreated");
 
@@ -488,14 +489,17 @@ public partial class MainWindow : MicaWindow
             return;
         }
 
+        // Fix: fetch the playback info from the FOCUSED session, ignoring the event argument 
+        // which might come from a background session preventing the UI from updating correctly
+        var realPlaybackInfo = focusedSession.ControlSession.GetPlaybackInfo();
         var songInfo = focusedSession.ControlSession.TryGetMediaPropertiesAsync().GetAwaiter().GetResult();
         var timeline = focusedSession.ControlSession.GetTimelineProperties();
-        taskbarWindow?.UpdateUi(songInfo.Title, songInfo.Artist, Helper.GetThumbnail(songInfo.Thumbnail), playbackInfo?.PlaybackStatus, playbackInfo?.Controls, timeline);
+        taskbarWindow?.UpdateUi(songInfo.Title, songInfo.Artist, Helper.GetThumbnail(songInfo.Thumbnail), realPlaybackInfo?.PlaybackStatus, realPlaybackInfo?.Controls, timeline);
 
         if (IsVisible)
         {
             UpdateUI(focusedSession);
-            HandlePlayBackState(playbackInfo?.PlaybackStatus);
+            HandlePlayBackState(realPlaybackInfo?.PlaybackStatus);
         }
     }
 
@@ -506,6 +510,11 @@ public partial class MainWindow : MicaWindow
     {
         // sometimes mediaSession.ControlSession can be null
         if (mediaSession.ControlSession == null)
+            return;
+
+        // ONLY update if this is the focused session
+        var currentFocused = mediaManager.GetFocusedSession();
+        if (currentFocused == null || currentFocused.Id != mediaSession.Id)
             return;
 
 #if DEBUG
@@ -590,6 +599,14 @@ public partial class MainWindow : MicaWindow
         _lastSelfUpdateTimestamp = DateTime.Now;
 
         if (mediaManager.GetFocusedSession() is not { } session) return;
+        
+        // Only ignore if the update is NOT from the focused session
+        if (session.Id != mediaSession.Id) return;
+
+        Dispatcher.Invoke(() =>
+        {
+            taskbarWindow?.UpdateTimeline(timelineProperties);
+        });
 
         if (_seekBarEnabled)
         {
@@ -601,6 +618,52 @@ public partial class MainWindow : MicaWindow
                 HandlePlayBackState(session.ControlSession.GetPlaybackInfo().PlaybackStatus);
             });
         }
+    }
+
+    private void MediaManager_OnFocusedSessionChanged(MediaSession mediaSession)
+    {
+        if (mediaSession == null)
+        {
+            Dispatcher.Invoke(() =>
+            {
+                taskbarWindow?.UpdateUi("-", "-", null, GlobalSystemMediaTransportControlsSessionPlaybackStatus.Closed);
+                if (IsVisible) Hide();
+            });
+            return;
+        }
+
+        // Force update UI for the new session
+        Dispatcher.Invoke(() =>
+        {
+             // Clear previous property tracking to ensure update happens
+            previousMediaProperty = "";
+            previousMediaPropertyThumbnail = "";
+            
+            // Trigger update logic manually since property changed might not fire immediately
+            var songInfo = mediaSession.ControlSession.TryGetMediaPropertiesAsync().GetAwaiter().GetResult();
+            // Create a dummy property object to reuse existing handler logic or call update directly
+            // Calling extraction logic directly here is cleaner
+            
+             // reusing extraction logic from OnAnyMediaPropertyChanged slightly modified
+            var playbackInfo = mediaSession.ControlSession.GetPlaybackInfo();
+            
+            // Update Taskbar
+             taskbarWindow?.UpdateUi(songInfo.Title, songInfo.Artist, Helper.GetThumbnail(songInfo.Thumbnail), playbackInfo.PlaybackStatus, playbackInfo.Controls, mediaSession.ControlSession.GetTimelineProperties());
+
+            // Update Flyout if visible or if we need to show NextUp
+            // But we don't want to show flyout on focus change unless user requests it? 
+            // The original logic shows flyout on key press. 
+            // We should just update the internal state so subsequent interactions use correct data.
+            
+            // However, we DO want the taskbar widget to update immediately.
+             pauseOtherMediaSessionsIfNeeded(mediaSession);
+             
+             if (IsVisible)
+             {
+                 UpdateUI(mediaSession);
+                 HandlePlayBackState(playbackInfo.PlaybackStatus);
+             }
+        });
     }
 
     private void MediaManager_OnAnySessionClosed(MediaSession mediaSession)
@@ -1173,6 +1236,7 @@ public partial class MainWindow : MicaWindow
             mediaManager.OnAnyPlaybackStateChanged -= CurrentSession_OnPlaybackStateChanged;
             mediaManager.OnAnyTimelinePropertyChanged -= MediaManager_OnAnyTimelinePropertyChanged;
             mediaManager.OnAnySessionClosed -= MediaManager_OnAnySessionClosed;
+            mediaManager.OnFocusedSessionChanged -= MediaManager_OnFocusedSessionChanged;
 
             // dispose managed resources
             _positionTimer?.Change(Timeout.Infinite, Timeout.Infinite);

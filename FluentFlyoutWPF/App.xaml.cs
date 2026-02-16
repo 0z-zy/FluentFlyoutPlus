@@ -1,5 +1,6 @@
 ﻿using FluentFlyout.Classes;
 using Microsoft.Toolkit.Uwp.Notifications;
+using System.IO;
 using System.Windows;
 
 namespace FluentFlyoutWPF;
@@ -11,6 +12,10 @@ public partial class App : Application
 {
     protected override async void OnStartup(StartupEventArgs e)
     {
+        // Ensure the working directory is set to the application directory
+        // This fixes issues when launching from Registry where CWD is System32
+        Directory.SetCurrentDirectory(AppContext.BaseDirectory);
+
         // log unhandled exceptions before crashing
         AppDomain.CurrentDomain.UnhandledException += (sender, args) =>
         {
