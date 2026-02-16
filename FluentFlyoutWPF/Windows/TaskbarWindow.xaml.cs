@@ -504,6 +504,13 @@ public partial class TaskbarWindow : Window
                 return;
             }
 
+            // check if taskbar handle is valid
+            if (taskbarHandle == IntPtr.Zero)
+            {
+                // Taskbar lost (explorer crash?), do nothing and wait for next tick or recovery
+                return;
+            }
+
             // If the Taskbar was not found during initialization or another taskbar was selected,
             // then we need to set the Taskbar as the Parent here.
             if (GetParent(interop.Handle) != taskbarHandle)
@@ -578,8 +585,13 @@ public partial class TaskbarWindow : Window
         int physicalHeight = (int)(40 * dpiScale); // default height
 
         // Get Taskbar dimensions
+        // Get Taskbar dimensions
         RECT taskbarRect;
-        GetWindowRect(taskbarHandle, out taskbarRect);
+        if (!GetWindowRect(taskbarHandle, out taskbarRect))
+        {
+             // Failed to get taskbar rect (handle might be stale/invalid)
+             return; 
+        }
         int taskbarHeight = taskbarRect.Bottom - taskbarRect.Top;
 
         // Centered vertically
