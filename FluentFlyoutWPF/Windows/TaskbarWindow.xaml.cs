@@ -172,6 +172,14 @@ public partial class TaskbarWindow : Window
         Show();
     }
 
+    protected override void OnClosed(EventArgs e)
+    {
+        base.OnClosed(e);
+        _timer?.Stop();
+        _visibilityTimer?.Stop();
+        _timeAutoUpdateTimer?.Stop();
+    }
+
     protected override void OnSourceInitialized(EventArgs e)
     {
         base.OnSourceInitialized(e);
@@ -439,14 +447,16 @@ public partial class TaskbarWindow : Window
 
             IntPtr taskbarHandle = GetSelectedTaskbarHandle(out bool isMainTaskbarSelected);
 
-            // This prevents the window from trying to float above the taskbar as a separate entity
-            int style = GetWindowLong(myHandle, GWL_STYLE);
-            style = (style & ~WS_POPUP) | WS_CHILD;
-            SetWindowLong(myHandle, GWL_STYLE, style);
+            if (taskbarHandle != IntPtr.Zero)
+            {
+                // This prevents the window from trying to float above the taskbar as a separate entity
+                int style = GetWindowLong(myHandle, GWL_STYLE);
+                style = (style & ~WS_POPUP) | WS_CHILD;
+                SetWindowLong(myHandle, GWL_STYLE, style);
 
-            SetParent(myHandle, taskbarHandle); // if this window is created faster than the Taskbar is loaded, then taskbarHandle will be NULL.
-
-            CalculateAndSetPosition(taskbarHandle, myHandle, isMainTaskbarSelected);
+                SetParent(myHandle, taskbarHandle); 
+                CalculateAndSetPosition(taskbarHandle, myHandle, isMainTaskbarSelected);
+            }
 
             // for hover animation - initialize with transparent, then ApplyWidgetStyle will set correct background
             if (MainBorder.Background is not SolidColorBrush)
@@ -478,6 +488,8 @@ public partial class TaskbarWindow : Window
             if (interop.Handle == IntPtr.Zero) // window handle lost, try to reset
             {
                 _timer.Stop();
+                _visibilityTimer.Stop();
+                _timeAutoUpdateTimer.Stop();
 
                 if (_recoveryAttempts >= _maxRecoveryAttempts)
                 {

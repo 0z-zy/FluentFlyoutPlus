@@ -1416,8 +1416,16 @@ public partial class MainWindow : MicaWindow
         UpdateTaskbar();
     }
 
+    private DateTime _lastRecreationTime = DateTime.MinValue;
+
     public void RecreateTaskbarWindow()
     {
+        if ((DateTime.Now - _lastRecreationTime).TotalSeconds < 2) 
+        {
+            Logger.Warn("RecreateTaskbarWindow called too frequently, ignoring.");
+            return;
+        }
+        _lastRecreationTime = DateTime.Now;
         try
         {
             Logger.Info("Recreating Taskbar Widget window");
