@@ -88,6 +88,8 @@ public partial class MainWindow : MicaWindow
     private readonly ConcurrentDictionary<string, DateTime> _sessionLastUpdate = new();
 
     private TaskbarWindow? taskbarWindow;
+    private readonly MediaSyncManager _mediaSyncManager = new();
+    private readonly Timer _watchdogTimer;
 
     public MainWindow()
     {
@@ -172,6 +174,7 @@ public partial class MainWindow : MicaWindow
         cts = new CancellationTokenSource();
 
         mediaManager.Start();
+        _mediaSyncManager.Start();
 
         _hookProc = HookCallback;
         _hookId = SetHook(_hookProc);
@@ -188,7 +191,29 @@ public partial class MainWindow : MicaWindow
         mediaManager.OnAnySessionClosed += MediaManager_OnAnySessionClosed;
         mediaManager.OnFocusedSessionChanged += MediaManager_OnFocusedSessionChanged;
 
+        _mediaSyncManager.OnMediaDataUpdated += (s, merged) =>
+        {
+            Dispatcher.Invoke(() =>
+            {
+                var session = GetValidFocusedSession();
+                if (session != null)
+                {
+                    UpdateUI(session);
+                    UpdateTaskbar();
+                }
+            });
+        };
+
         WM_TASKBARCREATED = RegisterWindowMessage("TaskbarCreated");
+
+        // Watchdog timer: Refresh taskbar every 5 seconds ONLY if the taskbar widget is active
+        _watchdogTimer = new Timer((_) => Dispatcher.Invoke(() => 
+        {
+            if (taskbarWindow != null && taskbarWindow.IsVisible)
+            {
+                UpdateTaskbar();
+            }
+        }), null, 5000, 5000);
 
         _positionTimer = new Timer(SeekbarUpdateUi, null, Timeout.Infinite, Timeout.Infinite);
         if (_seekBarEnabled && mediaManager.GetFocusedSession() is { } session)
@@ -433,22 +458,19 @@ public partial class MainWindow : MicaWindow
 
     public void UpdateTaskbar()
     {
-        if (!mediaManager.IsStarted || GetValidFocusedSession() == null)
+        var focusedSession = GetValidFocusedSession();
+        if (focusedSession == null)
         {
             taskbarWindow?.UpdateUi("-", "-", null, GlobalSystemMediaTransportControlsSessionPlaybackStatus.Closed);
             return;
         }
-        var focusedSession = GetValidFocusedSession();
-        var playbackInfo = focusedSession.ControlSession.GetPlaybackInfo();
-        var timeline = focusedSession.ControlSession.GetTimelineProperties();
 
-        if (_mediaPropertiesCache.TryGetValue(focusedSession.Id, out var cachedInfo))
+        var playbackInfo = focusedSession.ControlSession.GetPlaybackInfo();
+        var smtcTimeline = focusedSession.ControlSession.GetTimelineProperties();
+
+        if (!_mediaPropertiesCache.TryGetValue(focusedSession.Id, out var cachedInfo))
         {
-            taskbarWindow?.UpdateUi(cachedInfo.Title, cachedInfo.Artist, cachedInfo.Thumbnail, playbackInfo.PlaybackStatus, playbackInfo.Controls, timeline);
-        }
-        else
-        {
-            // Fallback for initial load if not cached yet
+            // Trigger async fetch if not in cache
             Task.Run(async () =>
             {
                 var info = await focusedSession.ControlSession.TryGetMediaPropertiesAsync();
@@ -463,12 +485,35 @@ public partial class MainWindow : MicaWindow
                         Controls = playbackInfo.Controls
                     };
                     _mediaPropertiesCache[focusedSession.Id] = newCache;
-                    Dispatcher.Invoke(() =>
-                    {
-                        taskbarWindow?.UpdateUi(info.Title, info.Artist, thumbnail, playbackInfo.PlaybackStatus, playbackInfo.Controls, timeline);
-                    });
+                    Dispatcher.Invoke(() => UpdateTaskbar());
                 }
             });
+        }
+
+        var merged = _mediaSyncManager.GetMergedData(
+            cachedInfo?.Title ?? "-",
+            cachedInfo?.Artist ?? "-",
+            smtcTimeline.EndTime,
+            smtcTimeline.Position,
+            playbackInfo.PlaybackStatus == GlobalSystemMediaTransportControlsSessionPlaybackStatus.Playing,
+            DateTime.Now - smtcTimeline.LastUpdatedTime.DateTime
+        );
+
+        taskbarWindow?.UpdateUi(
+            merged.Title,
+            merged.Artist,
+            cachedInfo?.Thumbnail,
+            merged.IsPlaying ? GlobalSystemMediaTransportControlsSessionPlaybackStatus.Playing : GlobalSystemMediaTransportControlsSessionPlaybackStatus.Paused,
+            playbackInfo.Controls,
+            null // We will update timeline separately
+        );
+        taskbarWindow?.UpdateTimeline(merged.Position, merged.Duration);
+
+        // ALSO update the flyout if it happens to be open
+        if (IsVisible)
+        {
+            UpdateUI(focusedSession);
+            HandlePlayBackState(playbackInfo.PlaybackStatus);
         }
     }
 
@@ -602,50 +647,18 @@ public partial class MainWindow : MicaWindow
         }
 
         // Fix: fetch the playback info from the FOCUSED session, ignoring the event argument 
-        // which might come from a background session preventing the UI from updating correctly
-        var realPlaybackInfo = focusedSession.ControlSession.GetPlaybackInfo();
-        var timeline = focusedSession.ControlSession.GetTimelineProperties();
-
-        if (_mediaPropertiesCache.TryGetValue(focusedSession.Id, out var cachedInfo))
+    // which might come from a background session preventing the UI from updating correctly
+    UpdateTaskbar();
+    
+    if (IsVisible)
+    {
+        if (focusedSession != null)
         {
-            taskbarWindow?.UpdateUi(cachedInfo.Title, cachedInfo.Artist, cachedInfo.Thumbnail, realPlaybackInfo?.PlaybackStatus, realPlaybackInfo?.Controls, timeline);
-            
-            if (IsVisible)
-            {
-                UpdateUI(focusedSession);
-                HandlePlayBackState(realPlaybackInfo?.PlaybackStatus);
-            }
-        }
-        else
-        {
-            // fallback if not cached, but do it async
-            Task.Run(async () =>
-            {
-                var info = await focusedSession.ControlSession.TryGetMediaPropertiesAsync();
-                if (info != null)
-                {
-                    var thumbnail = Helper.GetThumbnail(info.Thumbnail);
-                    var newCache = new CachedMediaInfo
-                    {
-                        Title = info.Title,
-                        Artist = info.Artist,
-                        Thumbnail = thumbnail,
-                        Controls = realPlaybackInfo?.Controls
-                    };
-                    _mediaPropertiesCache[focusedSession.Id] = newCache;
-                    Dispatcher.Invoke(() =>
-                    {
-                        taskbarWindow?.UpdateUi(info.Title, info.Artist, thumbnail, realPlaybackInfo?.PlaybackStatus, realPlaybackInfo?.Controls, timeline);
-                        if (IsVisible)
-                        {
-                            UpdateUI(focusedSession);
-                            HandlePlayBackState(realPlaybackInfo?.PlaybackStatus);
-                        }
-                    });
-                }
-            });
+            UpdateUI(focusedSession);
+            HandlePlayBackState(focusedSession.ControlSession.GetPlaybackInfo().PlaybackStatus);
         }
     }
+}
 
     // for determining whether MediaPropertyChanged has no changes
     private string previousMediaProperty = "";
@@ -696,11 +709,11 @@ public partial class MainWindow : MicaWindow
         }
 
         previousMediaProperty = check;
-        previousMediaPropertyThumbnail = checkThumbnail;
+    previousMediaPropertyThumbnail = checkThumbnail;
 
-        taskbarWindow?.UpdateUi(songInfo.Title, songInfo.Artist, thumbnail, playbackInfo.PlaybackStatus, playbackInfo.Controls, mediaSession.ControlSession.GetTimelineProperties());
+    UpdateTaskbar();
 
-        pauseOtherMediaSessionsIfNeeded(mediaSession);
+    pauseOtherMediaSessionsIfNeeded(mediaSession);
 
         if (SettingsManager.Current.NextUpEnabled && !FullscreenDetector.IsFullscreenApplicationRunning()) // show NextUpWindow if enabled in settings
         {
@@ -758,14 +771,11 @@ public partial class MainWindow : MicaWindow
         if (GetValidFocusedSession() is not { } session) return;
         
         // Only ignore if the update is NOT from the focused session
-        if (session.Id != mediaSession.Id) return;
+    if (session.Id != mediaSession.Id) return;
 
-        Dispatcher.Invoke(() =>
-        {
-            taskbarWindow?.UpdateTimeline(timelineProperties);
-        });
+    UpdateTaskbar();
 
-        if (_seekBarEnabled)
+    if (_seekBarEnabled)
         {
             Dispatcher.Invoke(() =>
             {
@@ -801,35 +811,9 @@ public partial class MainWindow : MicaWindow
             var timeline = mediaSession.ControlSession.GetTimelineProperties();
             
             // Update Taskbar
-            if (_mediaPropertiesCache.TryGetValue(mediaSession.Id, out var cachedInfo))
-            {
-                taskbarWindow?.UpdateUi(cachedInfo.Title, cachedInfo.Artist, cachedInfo.Thumbnail, playbackInfo.PlaybackStatus, playbackInfo.Controls, timeline);
-            }
-            else
-            {
-                Task.Run(async () =>
-                {
-                    var info = await mediaSession.ControlSession.TryGetMediaPropertiesAsync();
-                    if (info != null)
-                    {
-                        var thumbnail = Helper.GetThumbnail(info.Thumbnail);
-                        var newCache = new CachedMediaInfo
-                        {
-                            Title = info.Title,
-                            Artist = info.Artist,
-                            Thumbnail = thumbnail,
-                            Controls = playbackInfo.Controls
-                        };
-                        _mediaPropertiesCache[mediaSession.Id] = newCache;
-                        Dispatcher.Invoke(() =>
-                        {
-                            taskbarWindow?.UpdateUi(info.Title, info.Artist, thumbnail, playbackInfo.PlaybackStatus, playbackInfo.Controls, timeline);
-                        });
-                    }
-                });
-            }
+        UpdateTaskbar();
 
-            // Update Flyout if visible or if we need to show NextUp
+        // Update Flyout if visible or if we need to show NextUp
             // But we don't want to show flyout on focus change unless user requests it? 
             // The original logic shows flyout on key press. 
             // We should just update the internal state so subsequent interactions use correct data.
@@ -1146,15 +1130,27 @@ public partial class MainWindow : MicaWindow
             var songInfo = controlSession.TryGetMediaPropertiesAsync().GetAwaiter().GetResult();
             if (songInfo != null)
             {
-                SongTitle.Text = songInfo.Title;
-                SongArtist.Text = songInfo.Artist;
+                var uiTimeline = controlSession.GetTimelineProperties(); // Fix naming collision
+                _mediaPropertiesCache.TryGetValue(mediaSession.Id, out var cachedInfo);
+
+                var merged = _mediaSyncManager.GetMergedData(
+                    songInfo.Title,
+                    songInfo.Artist,
+                    uiTimeline.EndTime,
+                    uiTimeline.Position,
+                    mediaProperties.PlaybackStatus == GlobalSystemMediaTransportControlsSessionPlaybackStatus.Playing,
+                    DateTime.Now - uiTimeline.LastUpdatedTime.DateTime
+                );
+
+                SongTitle.Text = merged.Title;
+                SongArtist.Text = merged.Artist;
                 var image = Helper.GetThumbnail(songInfo.Thumbnail);
                 SongImage.ImageSource = image;
 
                 // set tooltip
                 SongInfoStackPanel.ToolTip = string.Empty;
-                SongInfoStackPanel.ToolTip += !String.IsNullOrEmpty(songInfo.Title) ? songInfo.Title : string.Empty;
-                SongInfoStackPanel.ToolTip += !String.IsNullOrEmpty(songInfo.Artist) ? "\n\n" + songInfo.Artist : string.Empty;
+                SongInfoStackPanel.ToolTip += !String.IsNullOrEmpty(merged.Title) ? merged.Title : string.Empty;
+                SongInfoStackPanel.ToolTip += !String.IsNullOrEmpty(merged.Artist) ? "\n\n" + merged.Artist : string.Empty;
 
                 // background blurred image
                 if (SettingsManager.Current.MediaFlyoutBackgroundBlur != 0)
@@ -1197,8 +1193,9 @@ public partial class MainWindow : MicaWindow
 
                     if (mediaSessionSupportsSeekbar)
                     {
-                        Seekbar.Maximum = timeline.MaxSeekTime.TotalSeconds;
-                        SeekbarMaxDuration.Text = timeline.MaxSeekTime.ToString(timeline.MaxSeekTime.Hours > 0 ? @"hh\:mm\:ss" : @"mm\:ss");
+                        var seekbarTimeline = controlSession.GetTimelineProperties(); // Avoid collision
+                        Seekbar.Maximum = seekbarTimeline.MaxSeekTime.TotalSeconds;
+                        SeekbarMaxDuration.Text = seekbarTimeline.MaxSeekTime.ToString(seekbarTimeline.MaxSeekTime.Hours > 0 ? @"hh\:mm\:ss" : @"mm\:ss");
                     }
                 }
             }
@@ -1399,14 +1396,25 @@ public partial class MainWindow : MicaWindow
         if (mediaManager.GetFocusedSession() is not { } session) return;
 
         var timeline = session.ControlSession.GetTimelineProperties();
-        var pos = timeline.Position + (DateTime.Now - timeline.LastUpdatedTime.DateTime);
-        if (pos > timeline.EndTime)
+        var playbackInfo = session.ControlSession.GetPlaybackInfo();
+        _mediaPropertiesCache.TryGetValue(session.Id, out var cachedInfo);
+
+        var merged = _mediaSyncManager.GetMergedData(
+            cachedInfo?.Title ?? string.Empty,
+            cachedInfo?.Artist ?? string.Empty,
+            timeline.EndTime,
+            timeline.Position,
+            playbackInfo.PlaybackStatus == GlobalSystemMediaTransportControlsSessionPlaybackStatus.Playing,
+            DateTime.Now - timeline.LastUpdatedTime.DateTime
+        );
+
+        if (merged.Position > merged.Duration && merged.Duration.TotalSeconds > 0)
         {
             HandlePlayBackState(GlobalSystemMediaTransportControlsSessionPlaybackStatus.Closed);
             return;
         }
 
-        UpdateSeekbarCurrentDuration(pos);
+        UpdateSeekbarCurrentDuration(merged.Position);
     }
 
     private void UpdateSeekbarCurrentDuration(TimeSpan pos)

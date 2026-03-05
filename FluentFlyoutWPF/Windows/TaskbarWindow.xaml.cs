@@ -140,6 +140,9 @@ public partial class TaskbarWindow : Window
     private readonly DispatcherTimer _visibilityTimer;
     private readonly DispatcherTimer _timeAutoUpdateTimer;
     private GlobalSystemMediaTransportControlsSessionTimelineProperties? _lastTimeline;
+    private TimeSpan _lastPosition;
+    private TimeSpan _lastEndTime;
+    private DateTime _lastTimelineUpdate = DateTime.MinValue;
     //private Task _crossFadeTask = Task.CompletedTask;
 
     public TaskbarWindow()
@@ -1048,6 +1051,23 @@ public partial class TaskbarWindow : Window
         Dispatcher.Invoke(() =>
         {
             _lastTimeline = timeline;
+            _lastPosition = timeline.Position;
+            _lastEndTime = timeline.EndTime;
+            _lastTimelineUpdate = timeline.LastUpdatedTime.DateTime;
+            UpdateTimeOnly();
+        });
+    }
+
+    public void UpdateTimeline(TimeSpan position, TimeSpan endTime)
+    {
+        if (!SettingsManager.Current.TaskbarWidgetShowTime) return;
+
+        Dispatcher.Invoke(() =>
+        {
+            _lastTimeline = null; // Mark that we're using primitives
+            _lastPosition = position;
+            _lastEndTime = endTime;
+            _lastTimelineUpdate = DateTime.Now;
             UpdateTimeOnly();
         });
     }
@@ -1057,11 +1077,10 @@ public partial class TaskbarWindow : Window
     /// </summary>
     private void UpdateTimeOnly()
     {
-        Logger.Debug($"UpdateTimeOnly called. ShowTime={SettingsManager.Current.TaskbarWidgetShowTime}, lastTimeline={_lastTimeline != null}, isPaused={_isPaused}");
-        
-        if (!SettingsManager.Current.TaskbarWidgetShowTime || _lastTimeline == null)
+        if (!SettingsManager.Current.TaskbarWidgetShowTime || (_lastTimeline == null && _lastEndTime == TimeSpan.Zero) || SettingsManager.Current.TaskbarWidgetStyle == 2)
         {
             _timeAutoUpdateTimer.Stop();
+            TimeDisplay.Visibility = Visibility.Collapsed;
             return;
         }
         
@@ -1069,16 +1088,31 @@ public partial class TaskbarWindow : Window
         if (_isPaused)
         {
             _timeAutoUpdateTimer.Stop();
-            return;
+            // Keep visibility as it was if it's already shown
         }
 
-        var timeline = _lastTimeline;
-        var pos = timeline.Position + (DateTime.Now - timeline.LastUpdatedTime.DateTime);
-        if (pos > timeline.EndTime) pos = timeline.EndTime;
+        TimeSpan pos;
+        TimeSpan endTime;
+        
+        if (_lastTimeline != null)
+        {
+            pos = _lastTimeline.Position;
+            if (!_isPaused) pos += (DateTime.Now - _lastTimeline.LastUpdatedTime.DateTime);
+            endTime = _lastTimeline.EndTime;
+        }
+        else
+        {
+            pos = _lastPosition;
+            if (!_isPaused) pos += (DateTime.Now - _lastTimelineUpdate);
+            endTime = _lastEndTime;
+        }
+
+        if (pos > endTime) pos = endTime;
         if (pos < TimeSpan.Zero) pos = TimeSpan.Zero;
 
-        string format = timeline.MaxSeekTime.Hours > 0 ? @"h\:mm\:ss" : @"m\:ss";
-        TimeDisplay.Text = $"{pos.ToString(format)} / {timeline.MaxSeekTime.ToString(format)}";
+        string format = endTime.Hours > 0 ? @"h\:mm\:ss" : @"m\:ss";
+        TimeDisplay.Text = $"{pos.ToString(format)} / {endTime.ToString(format)}";
+        TimeDisplay.Visibility = Visibility.Visible;
         
         // When time updates, we MUST update position because width might change (e.g. 9:59 -> 10:00)
         Dispatcher.BeginInvoke(() => UpdatePosition(), DispatcherPriority.Background);
